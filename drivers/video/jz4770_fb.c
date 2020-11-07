@@ -39,8 +39,12 @@
 #include <linux/clk.h>
 #include <linux/interrupt.h>
 #include <linux/wait.h>
+
+///
 #include <linux/platform_data/jz4770_fb.h>
 #include <video/jzpanel.h>
+///
+
 #include <asm/addrspace.h>
 #include <asm/page.h>
 #include <asm/irq.h>
@@ -54,9 +58,6 @@
 #define IPS_LKWY030C02_2_8
 #if defined(IPS_LKWY030C02_2_8)
 #include <asm/mach-jz4770/jz4770cpm.h>
-#define V_EXPAND_2_TIMES//打开这个会垂直方向扩大2倍
-#define FORCE_NOT_TO_STRETCH//强制不让拉伸
-#define BPP_16
 #endif
 
 #define MAX_XRES 640
@@ -117,11 +118,10 @@ static const struct jz_panel jz4770_lcd_panel = {
 		   LCD_CFG_HSP|
 		   LCD_CFG_VSP,
 	/* bw, bh, dw, dh, fclk, hsw, vsw, elw, blw, efw, bfw */
-	320, 240, 320, 240, 240, 28, 1, 25, 128, 16,36,
+	320, 480, 320, 480, 240, 28, 1, 25, 128, 16,36,
 	/* Note: 432000000 / 72 = 60 * 400 * 250, so we get exactly 60 Hz. */
 };
 #endif
-
 struct jzfb {
 	struct fb_info *fb;
 	struct platform_device *pdev;
@@ -153,15 +153,10 @@ struct jzfb {
 };
 
 static void *lcd_frame1;
-#if defined(V_EXPAND_2_TIMES)
-static bool keep_aspect_ratio = false;
-static bool allow_downscaling = false;
-static bool integer_scaling = true;
-#else
+
 static bool keep_aspect_ratio = true;
 static bool allow_downscaling = false;
 static bool integer_scaling = false;
-#endif
 
 /*
  * Sharpness settings range is [0,32]
@@ -408,31 +403,17 @@ static int jzfb_check_var(struct fb_var_screeninfo *var, struct fb_info *fb)
 		var->xres = 4;
 	if (var->yres < 4)
 		var->yres = 4;
-#if defined(V_EXPAND_2_TIMES)
-	if (!allow_downscaling) {
-		if (var->xres > panel->dw)
-			var->xres = panel->dw;
-		if (var->yres > panel->dh)
-			var->yres = panel->dh*2;
-	}
 
-	/* Adjust the input size until we find a valid configuration */
-	for (num = panel->dw, denom = var->xres; var->xres <= MAX_XRES &&
-			reduce_fraction(&num, &denom) < 0;
-			denom++, var->xres++);
-#else
 	if (!allow_downscaling) {
 		if (var->xres > panel->dw)
 			var->xres = panel->dw;
 		if (var->yres > panel->dh)
 			var->yres = panel->dh;
 	}
-
 	/* Adjust the input size until we find a valid configuration */
 	for (num = panel->dw, denom = var->xres; var->xres <= MAX_XRES &&
 			reduce_fraction(&num, &denom) < 0;
 			denom++, var->xres++);
-#endif
 	if (var->xres > MAX_XRES)
 		return -EINVAL;
 
@@ -502,13 +483,9 @@ static int jzfb_check_var(struct fb_var_screeninfo *var, struct fb_info *fb)
 
 	jzfb->clear_fb = var->bits_per_pixel != fb->var.bits_per_pixel ||
 		var->xres != fb->var.xres || var->yres != fb->var.yres;
-#if defined(V_EXPAND_2_TIMES)
-	divider = (panel->bw + panel->elw + panel->blw)
-		* (panel->bh*2 + panel->efw + panel->bfw);
-#else
+
 	divider = (panel->bw + panel->elw + panel->blw)
 		* (panel->bh + panel->efw + panel->bfw);
-#endif
 	if (var->pixclock) {
 		framerate = var->pixclock / divider;
 		if (framerate > panel->fclk)
@@ -764,33 +741,22 @@ static void set_coefs(struct jzfb *jzfb, unsigned int reg,
 			set_upscale_coefs(jzfb, reg, num, denom);
 	}
 }
-#if defined(V_EXPAND_2_TIMES)
-static inline bool scaling_required(struct jzfb *jzfb)
-{
-	struct fb_var_screeninfo *var = &jzfb->fb->var;
-	return var->xres != jzfb->panel->dw || var->yres != jzfb->panel->dh*2;
-}
-#else
+
 static inline bool scaling_required(struct jzfb *jzfb)
 {
 	struct fb_var_screeninfo *var = &jzfb->fb->var;
 	return var->xres != jzfb->panel->dw || var->yres != jzfb->panel->dh;
 }
-#endif
+
 static void jzfb_ipu_configure(struct jzfb *jzfb)
 {
 	const struct jz_panel *panel = jzfb->panel;
 	struct fb_info *fb = jzfb->fb;
 	u32 ctrl, coef_index = 0, size, format = 2 << IPU_D_FMT_OUT_FMT_BIT;
-#if defined(V_EXPAND_2_TIMES)
-	unsigned int outputW = panel->dw,
-		     outputH = panel->dh*2,
-		     xpos = 0, ypos = 0;
-#else
 	unsigned int outputW = panel->dw,
 		     outputH = panel->dh,
 		     xpos = 0, ypos = 0;
-#endif
+	bool needs_modeset, upscaling_w, upscaling_h;
 	/* Enable the chip, reset all the registers */
 	writel(IPU_CTRL_CHIP_EN | IPU_CTRL_RST, jzfb->ipu_base + IPU_CTRL);
 
@@ -837,13 +803,8 @@ static void jzfb_ipu_configure(struct jzfb *jzfb)
 		ctrl |= IPU_CTRL_SPKG_SEL;
 
 	if (scaling_required(jzfb)) {
-		#if defined(V_EXPAND_2_TIMES)
-		unsigned int numW = panel->dw, denomW = fb->var.xres,
-			     numH = panel->dh*2, denomH = fb->var.yres;
-		#else
 		unsigned int numW = panel->dw, denomW = fb->var.xres,
 			     numH = panel->dh, denomH = fb->var.yres;
-		#endif
 
 		if (integer_scaling && (denomW <= numW) && (denomH <= numH)) {
 			numW /= denomW;
@@ -853,19 +814,25 @@ static void jzfb_ipu_configure(struct jzfb *jzfb)
 			BUG_ON(reduce_fraction(&numW, &denomW) < 0);
 			BUG_ON(reduce_fraction(&numH, &denomH) < 0);
 		}
-		#ifndef FORCE_NOT_TO_STRETCH
+
 		if (keep_aspect_ratio) {
+			
+			unsigned int numH2 = panel->dh / 2 , denomH2 = fb->var.yres;
+			BUG_ON(reduce_fraction(&numH2, &denomH2) < 0);
+		
 			unsigned int ratioW = (UINT_MAX >> 6) * numW / denomW,
-				     ratioH = (UINT_MAX >> 6) * numH / denomH;
+				     ratioH = (UINT_MAX >> 6) * numH2 / denomH2;
 			if (ratioW < ratioH) {
-				numH = numW;
-				denomH = denomW;
+			unsigned int numW2 = panel->dw*2, denomW2 = fb->var.xres;
+			BUG_ON(reduce_fraction(&numW2, &denomW2) < 0);
+				numH = numW2;
+				denomH = denomW2;
 			} else {
-				numW = numH;
-				denomW = denomH;
+
+				numW = numH2;
+				denomW = denomH2;
 			}
 		}
-		#endif
 
 		/*
 		 * Must set ZOOM_SEL before programming bicubic LUTs.
@@ -876,20 +843,38 @@ static void jzfb_ipu_configure(struct jzfb *jzfb)
 			jzfb->ipu_base + IPU_CTRL);
 		ctrl |= IPU_CTRL_ZOOM_SEL;
 
+		upscaling_w = numW > denomW;
+		if (upscaling_w)
+			ctrl |= IPU_CTRL_HSCALE;
+
+		upscaling_h = numH > denomH;
+		if (upscaling_h)
+			ctrl |= IPU_CTRL_VSCALE;
+
 		if (numW != 1 || denomW != 1) {
 			set_coefs(jzfb, IPU_HRSZ_COEF_LUT, numW, denomW);
-			coef_index |= ((numW - 1) << 16);
-			ctrl |= IPU_CTRL_HRSZ_EN;
+
+		if (!upscaling_w)
+			coef_index |= (denomW - 1) << 16;
+		else
+			coef_index |= (numW - 1) << 16;
+
+		ctrl |= IPU_CTRL_HRSZ_EN;
 		}
 
 		if (numH != 1 || denomH != 1) {
 			set_coefs(jzfb, IPU_VRSZ_COEF_LUT, numH, denomH);
-			coef_index |= numH - 1;
-			ctrl |= IPU_CTRL_VRSZ_EN;
+		if (!upscaling_h)
+			coef_index |= (denomH - 1);
+		else
+			coef_index |= (numH - 1);
+
+		ctrl |= IPU_CTRL_VRSZ_EN;
 		}
 
 		outputH = fb->var.yres * numH / denomH;
 		outputW = fb->var.xres_virtual * numW / denomW;
+		
 #ifdef USE_VGA_HACK
 if (fb->var.xres == 368)
 {
@@ -920,13 +905,8 @@ outputW -= 64;
 	writel(size, jzfb->ipu_base + IPU_OUT_GS);
 	writel(outputW * 4, jzfb->ipu_base + IPU_OUT_STRIDE);
 	/* Resize Foreground1 to the output size of the IPU */
-#if defined(V_EXPAND_2_TIMES)
-	xpos = (panel->bw - outputW) / 2;
-	ypos = (panel->bh*2 - outputH) / 2;
-#else
 	xpos = (panel->bw - outputW) / 2;
 	ypos = (panel->bh - outputH) / 2;
-#endif
 	jzfb_foreground_resize(jzfb, xpos, ypos, outputW, outputH);
 
 	dev_dbg(&jzfb->pdev->dev, "Scaling %ux%u to %ux%u\n",
@@ -1051,17 +1031,6 @@ static void jzfb_set_panel_mode(struct jzfb *jzfb)
 			jzfb->base + LCD_IPUR);
 
 	/* Set HT / VT / HDS / HDE / VDS / VDE / HPE / VPE */
-#if defined(V_EXPAND_2_TIMES)
-	writel((panel->blw + panel->bw + panel->elw) << LCD_VAT_HT_BIT |
-			(panel->bfw + panel->bh*2 + panel->efw) << LCD_VAT_VT_BIT,
-		jzfb->base + LCD_VAT);
-	writel(panel->blw << LCD_DAH_HDS_BIT |
-			(panel->blw + panel->bw) << LCD_DAH_HDE_BIT,
-			jzfb->base + LCD_DAH);
-	writel(panel->bfw << LCD_DAV_VDS_BIT |
-			(panel->bfw + panel->bh*2) << LCD_DAV_VDE_BIT,
-				jzfb->base + LCD_DAV);
-#else
 	writel((panel->blw + panel->bw + panel->elw) << LCD_VAT_HT_BIT |
 			(panel->bfw + panel->bh + panel->efw) << LCD_VAT_VT_BIT,
 		jzfb->base + LCD_VAT);
@@ -1071,7 +1040,6 @@ static void jzfb_set_panel_mode(struct jzfb *jzfb)
 	writel(panel->bfw << LCD_DAV_VDS_BIT |
 			(panel->bfw + panel->bh) << LCD_DAV_VDE_BIT,
 			jzfb->base + LCD_DAV);
-#endif
 	writel(panel->hsw << LCD_HSYNC_HPE_BIT, jzfb->base + LCD_HSYNC);
 	writel(panel->vsw << LCD_VSYNC_VPE_BIT, jzfb->base + LCD_VSYNC);
 
@@ -1198,6 +1166,7 @@ static int jzfb_ioctl(struct fb_info *info, unsigned int cmd,
 			  unsigned long arg)
 {
 	struct jzfb *jzfb = info->par;
+
 	switch (cmd) {
 		case FBIO_WAITFORVSYNC:
 			return jzfb_wait_for_vsync(jzfb);
@@ -1205,6 +1174,7 @@ static int jzfb_ioctl(struct fb_info *info, unsigned int cmd,
 			return -ENOIOCTLCMD;
 	}
 }
+
 static struct fb_ops jzfb_ops = {
 	.owner			= THIS_MODULE,
 	.fb_setcolreg		= jzfb_setcolreg,
@@ -1352,6 +1322,7 @@ static DEVICE_ATTR_RW(integer_scaling);
 static DEVICE_ATTR_RW(sharpness_upscaling);
 static DEVICE_ATTR_RW(sharpness_downscaling);
 static DEVICE_BOOL_ATTR(allow_downscaling, 0644, allow_downscaling);
+
 static int jzfb_probe(struct platform_device *pdev)
 {
 	struct jzfb *jzfb;
@@ -1393,11 +1364,7 @@ static int jzfb_probe(struct platform_device *pdev)
 	jzfb->panel = &jz4770_lcd_panel;
 	jzfb->pdev = pdev;
 	jzfb->pdata = pdata;
-	#if defined(BPP_16)
-	jzfb->bpp = 16;
-	#else
 	jzfb->bpp = 32;
-	#endif
 	init_waitqueue_head(&jzfb->wait_vsync);
 	spin_lock_init(&jzfb->lock);
 
@@ -1548,6 +1515,7 @@ static int jzfb_probe(struct platform_device *pdev)
 	#endif
 	fb_prepare_logo(jzfb->fb, 0);
 	fb_show_logo(jzfb->fb, 0);
+
 	// ret = of_platform_populate(pdev->dev.of_node, NULL, NULL, &pdev->dev);
 	// if (ret)
 		// dev_warn(&pdev->dev, "Failed to populate child devices: %d\n",
