@@ -118,8 +118,12 @@ static const struct jz_panel jz4770_lcd_panel = {
 		   LCD_CFG_HSP|
 		   LCD_CFG_VSP,
 	/* bw, bh, dw, dh, fclk, hsw, vsw, elw, blw, efw, bfw */
-	320, 480, 320, 480, 240, 28, 1, 25, 128, 16,36,
+	320, 480, 320, 480, 60, 28, 1, 30, 210, 84,36,
 	/* Note: 432000000 / 72 = 60 * 400 * 250, so we get exactly 60 Hz. */
+/*
+	divider = (panel->bw * 3 + panel->elw + panel->blw)
+		* (panel->bh + panel->efw + panel->bfw);
+*/	
 };
 #endif
 struct jzfb {
@@ -248,20 +252,133 @@ void lcd_special_pin_init(void)
 	__gpio_set_pin(LCD_RET);	
 }
 
+
+#define REG00_VBRT_CTRL(val)		(val)
+
+#define REG01_COM_DC(val)		(val)
+
+#define REG02_DA_CONTRAST(val)		(val)
+#define REG02_VESA_SEL(val)		((val) << 5)
+#define REG02_COMDC_SW			BIT(7)
+
+#define REG03_VPOSITION(val)		(val)
+#define REG03_BSMOUNT			BIT(5)
+#define REG03_COMTST			BIT(6)
+#define REG03_HPOSITION1		BIT(7)
+
+#define REG04_HPOSITION1(val)		(val)
+
+#define REG05_CLIP			BIT(0)
+#define REG05_NVM_VREFRESH		BIT(1)
+#define REG05_SLFR			BIT(2)
+#define REG05_SLBRCHARGE(val)		((val) << 3)
+#define REG05_PRECHARGE_LEVEL(val)	((val) << 6)
+
+#define REG06_TEST5			BIT(0)
+#define REG06_SLDWN			BIT(1)
+#define REG06_SLRGT			BIT(2)
+#define REG06_TEST2			BIT(3)
+#define REG06_XPSAVE			BIT(4)
+#define REG06_GAMMA_SEL(val)		((val) << 5)
+#define REG06_NT			BIT(7)
+
+#define REG07_TEST1			BIT(0)
+#define REG07_HDVD_POL			BIT(1)
+#define REG07_CK_POL			BIT(2)
+#define REG07_TEST3			BIT(3)
+#define REG07_TEST4			BIT(4)
+#define REG07_480_LINEMASK		BIT(5)
+#define REG07_AMPTST(val)		((val) << 6)
+
+#define REG08_SLHRC(val)		(val)
+#define REG08_CLOCK_DIV(val)		((val) << 2)
+#define REG08_PANEL(val)		((val) << 5)
+
+#define REG09_SUB_BRIGHT_R(val)		(val)
+#define REG09_NW_NB			BIT(6)
+#define REG09_IPCON			BIT(7)
+
+#define REG0A_SUB_BRIGHT_B(val)		(val)
+#define REG0A_PAIR			BIT(6)
+#define REG0A_DE_SEL			BIT(7)
+
+#define REG0B_MBK_POSITION(val)		(val)
+#define REG0B_HD_FREERUN		BIT(4)
+#define REG0B_VD_FREERUN		BIT(5)
+#define REG0B_YUV2BIN(val)		((val) << 6)
+
+#define REG0C_CONTRAST_R(val)		(val)
+#define REG0C_DOUBLEREAD		BIT(7)
+
+#define REG0D_CONTRAST_G(val)		(val)
+#define REG0D_RGB_YUV			BIT(7)
+
+#define REG0E_CONTRAST_B(val)		(val)
+#define REG0E_PIXELCOLORDRIVE		BIT(7)
+
+#define REG0F_ASPECT			BIT(0)
+#define REG0F_OVERSCAN(val)		((val) << 1)
+#define REG0F_FRAMEWIDTH(val)		((val) << 3)
+
+#define REG10_BRIGHT(val)		(val)
+
+#define REG11_SIG_GAIN(val)		(val)
+#define REG11_SIGC_CNTL			BIT(6)
+#define REG11_SIGC_POL			BIT(7)
+
+#define REG12_COLOR(val)		(val)
+#define REG12_PWCKSEL(val)		((val) << 6)
+
+#define REG13_4096LEVEL_CNTL(val)	(val)
+#define REG13_SL4096(val)		((val) << 4)
+#define REG13_LIMITER_CONTROL		BIT(7)
+
+#define REG14_PANEL_TEST(val)		(val)
+
+#define REG15_NVM_LINK0			BIT(0)
+#define REG15_NVM_LINK1			BIT(1)
+#define REG15_NVM_LINK2			BIT(2)
+#define REG15_NVM_LINK3			BIT(3)
+#define REG15_NVM_LINK4			BIT(4)
+#define REG15_NVM_LINK5			BIT(5)
+#define REG15_NVM_LINK6			BIT(6)
+#define REG15_NVM_LINK7			BIT(7)
 void IPS_LKWY030C02_2_8_init(void)
 {
-	spi_writ_bit16(0x02,0x7f);
-	spi_writ_bit16(0x03,0x0A);
-	spi_writ_bit16(0x04,0x80);
-	spi_writ_bit16(0x06,0x90);
-	spi_writ_bit16(0x08,0x28);
-	spi_writ_bit16(0x09,0x20);
-	spi_writ_bit16(0x0a,0x20);
-	spi_writ_bit16(0x0c,0x40);
-	spi_writ_bit16(0x0d,0x40);
-	spi_writ_bit16(0x0e,0x40);
-	spi_writ_bit16(0x10,0x80);
-	spi_writ_bit16(0x11,0x3F);
+	spi_writ_bit16( 0x00, REG00_VBRT_CTRL(0x7f) );
+	spi_writ_bit16( 0x01, REG01_COM_DC(0x3c) );
+	spi_writ_bit16( 0x02, REG02_VESA_SEL(0x3) | REG02_DA_CONTRAST(0x1f) );
+	spi_writ_bit16( 0x03, REG03_VPOSITION(0x0a) );
+	spi_writ_bit16( 0x04, REG04_HPOSITION1(0xd2) );
+	spi_writ_bit16( 0x05, REG05_CLIP | REG05_NVM_VREFRESH | REG05_SLBRCHARGE(0x2) );
+	spi_writ_bit16( 0x06, REG06_XPSAVE | REG06_NT );
+	spi_writ_bit16( 0x07, 0 );
+	spi_writ_bit16( 0x08, REG08_PANEL(0x1) | REG08_CLOCK_DIV(0x2) );
+	spi_writ_bit16( 0x09, REG09_SUB_BRIGHT_R(0x20) );
+	spi_writ_bit16( 0x0a, REG0A_SUB_BRIGHT_B(0x20) );
+	spi_writ_bit16( 0x0b, REG0B_HD_FREERUN | REG0B_VD_FREERUN );
+	spi_writ_bit16( 0x0c, REG0C_CONTRAST_R(0x10) );
+	spi_writ_bit16( 0x0d, REG0D_CONTRAST_G(0x10) );
+	spi_writ_bit16( 0x0e, REG0E_CONTRAST_B(0x10) );
+	spi_writ_bit16( 0x0f, 0 );
+	spi_writ_bit16( 0x10, REG10_BRIGHT(0x7f) );
+	spi_writ_bit16( 0x11, REG11_SIGC_CNTL | REG11_SIG_GAIN(0x3f) );
+	spi_writ_bit16( 0x12, REG12_COLOR(0x20) | REG12_PWCKSEL(0x1) );
+	spi_writ_bit16( 0x13, REG13_4096LEVEL_CNTL(0x8) );
+	spi_writ_bit16( 0x14, 0 );
+	spi_writ_bit16( 0x15, 0 );	
+	// spi_writ_bit16(0x02,0x7f);
+	// spi_writ_bit16(0x03,0x0A);
+	// spi_writ_bit16(0x04,0x80);
+	// spi_writ_bit16(0x06,0x90);
+	// spi_writ_bit16(0x08,0x28);
+	// spi_writ_bit16(0x09,0x20);
+	// spi_writ_bit16(0x0a,0x20);
+	// spi_writ_bit16(0x0c,0x40);
+	// spi_writ_bit16(0x0d,0x40);
+	// spi_writ_bit16(0x0e,0x40);
+	// spi_writ_bit16(0x10,0x80);
+	// spi_writ_bit16(0x11,0x3F);
 }
 void lcd_enter_sleep(void)
 {
@@ -484,7 +601,7 @@ static int jzfb_check_var(struct fb_var_screeninfo *var, struct fb_info *fb)
 	jzfb->clear_fb = var->bits_per_pixel != fb->var.bits_per_pixel ||
 		var->xres != fb->var.xres || var->yres != fb->var.yres;
 
-	divider = (panel->bw + panel->elw + panel->blw)
+	divider = (panel->bw * 3 + panel->elw + panel->blw)
 		* (panel->bh + panel->efw + panel->bfw);
 	if (var->pixclock) {
 		framerate = var->pixclock / divider;
