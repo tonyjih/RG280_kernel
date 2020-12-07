@@ -119,11 +119,7 @@ static const struct jz_panel jz4770_lcd_panel = {
 		   LCD_CFG_VSP,
 	/* bw, bh, dw, dh, fclk, hsw, vsw, elw, blw, efw, bfw */
 	320, 480, 320, 480, 60, 28, 1, 30, 210, 84,36,
-	/* Note: 432000000 / 72 = 60 * 400 * 250, so we get exactly 60 Hz. */
-/*
-	divider = (panel->bw * 3 + panel->elw + panel->blw)
-		* (panel->bh + panel->efw + panel->bfw);
-*/	
+	/* Note: 432000000 / 10 = 60 * 1200 * 600, so we get exactly 60 Hz. */
 };
 #endif
 struct jzfb {
@@ -960,11 +956,11 @@ static void jzfb_ipu_configure(struct jzfb *jzfb)
 			jzfb->ipu_base + IPU_CTRL);
 		ctrl |= IPU_CTRL_ZOOM_SEL;
 
-		upscaling_w = numW > denomW;
+		upscaling_w = 1;
 		if (upscaling_w)
 			ctrl |= IPU_CTRL_HSCALE;
 
-		upscaling_h = numH > denomH;
+		upscaling_h = 1;
 		if (upscaling_h)
 			ctrl |= IPU_CTRL_VSCALE;
 
